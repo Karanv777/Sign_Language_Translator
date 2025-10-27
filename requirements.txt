@@ -1,4 +1,4 @@
-streamlit==1.33.0
+streamlit==1.47.0
 Pillow==10.3.0
 deep_translator==1.11.4
 gTTS==2.5.1
@@ -6,5 +6,5 @@ SpeechRecognition==3.10.1
 pycountry==23.12.11
 numpy==1.26.4
 opencv-python-headless==4.9.0.80
-mediapipe==0.10.11
+mediapipe==0.10.21
 torch==2.3.0 --index-url https://download.pytorch.org/whl/cpu
