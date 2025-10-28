@@ -206,7 +206,7 @@ def display_sign_language_and_audio(text_to_display, output_container):
                         try:
                             image = Image.open(letter_path)
                             image_placeholder.image(image, caption=f"Letter: {char.upper()}", width=200) # Smaller width
-                            time.sleep(0.7) # Slightly faster transition
+                            time.sleep(1.0) # Slightly faster transition
                         except Exception as e:
                             st.error(f"Error loading image {letter_path}: {e}")
                             image_placeholder.empty()
