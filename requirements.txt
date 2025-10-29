@@ -12,3 +12,4 @@ streamlit-webrtc
 aiortc
 av
 PyAudio
+pydub
