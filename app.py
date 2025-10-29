@@ -15,9 +15,12 @@ import cv2
 import torch
 import torch.nn as nn
 import mediapipe as mp
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfiguration
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfiguration, WebRtcMode
 import av # Needed by streamlit-webrtc
 import queue # For passing results between threads
+import pydub # For audio conversion
+from io import BytesIO # To handle audio in memory
+import threading
 
 # --- App Configuration ---
 st.set_page_config(page_title="Voyage Voice", page_icon="🤟", layout="wide")
@@ -206,7 +209,7 @@ def display_sign_language_and_audio(text_to_display, output_container):
                         try:
                             image = Image.open(letter_path)
                             image_placeholder.image(image, caption=f"Letter: {char.upper()}", width=200) # Smaller width
-                            time.sleep(0.7) # Slightly faster transition
+                            time.sleep(1.0) # Slightly faster transition
                         except Exception as e:
                             st.error(f"Error loading image {letter_path}: {e}")
                             image_placeholder.empty()
@@ -216,9 +219,100 @@ def display_sign_language_and_audio(text_to_display, output_container):
                         time.sleep(0.5)
                 elif char == ' ':
                     image_placeholder.empty() # Clear for space
-                    time.sleep(0.4) # Shorter pause for space
+                    time.sleep(0.3) # Shorter pause for space
             image_placeholder.empty() # Clear last letter
 
+
+class AudioProcessor(VideoTransformerBase):
+    def __init__(self):
+        # --- State for this instance ---
+        self.recognizer = sr.Recognizer()
+        self.audio_buffer = []
+        self.sample_rate = 0
+        self.sample_width = 0
+        self.channels = 0
+        
+        # --- Result Handling (Thread-Safe) ---
+        self.result = None
+        self.lock = threading.Lock()
+
+    # This method is called by streamlit-webrtc for each audio frame
+    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
+        try:
+            nd_array = frame.to_ndarray()
+            
+            if not self.sample_rate:
+                self.sample_rate = frame.sample_rate
+                self.sample_width = nd_array.dtype.itemsize
+                self.channels = frame.layout.nb_channels
+                print(f"DEBUG: Audio properties set (Rate: {self.sample_rate}, Width: {self.sample_width}, Channels: {self.channels})")
+
+            self.audio_buffer.append(nd_array.tobytes())
+        except Exception as e:
+            print(f"Error processing audio frame: {e}")
+
+        return frame
+
+    def on_ended(self):
+        print("DEBUG: Audio stream ended. Processing buffer.")
+        
+        if not self.audio_buffer or not self.sample_rate:
+            print("DEBUG: Audio buffer is empty or properties not set.")
+            with self.lock:
+                self.result = "No audio received."
+            self.audio_buffer.clear()
+            return
+
+        result_text = "An error occurred during recognition."
+        try:
+            combined_audio_data = b"".join(self.audio_buffer)
+            
+            segment = pydub.AudioSegment(
+                data=combined_audio_data,
+                sample_width=self.sample_width,
+                frame_rate=self.sample_rate,
+                channels=self.channels
+            )
+            
+            wav_buffer = BytesIO()
+            segment.export(wav_buffer, format="wav")
+            wav_buffer.seek(0)
+
+            with sr.AudioFile(wav_buffer) as source:
+                print("DEBUG: Recording from buffer...")
+                audio_data = self.recognizer.record(source)
+            
+            print("DEBUG: Recognizing speech...")
+            recognized_text = self.recognizer.recognize_google(audio_data, language="en-IN").lower()
+            print(f"DEBUG: Recognized text: {recognized_text}")
+            result_text = recognized_text
+            
+        except sr.UnknownValueError:
+            print("DEBUG: SpeechRecognition could not understand audio.")
+            result_text = "Audio unclear or not understood."
+        except sr.RequestError as e:
+            print(f"DEBUG: SpeechRecognition service error: {e}")
+            result_text = f"Recognition service error; {e}"
+        except Exception as e:
+            print(f"DEBUG: Error during final recognition: {e}")
+            result_text = "An error occurred during recognition."
+        
+        finally:
+            # --- Store result safely ---
+            with self.lock:
+                self.result = result_text
+            
+            # --- Cleanup ---
+            self.audio_buffer.clear()
+            self.sample_rate = 0
+            self.sample_width = 0
+            self.channels = 0
+            if 'wav_buffer' in locals():
+                wav_buffer.close()
+
+# (near your other session state inits)
+if 'processing_audio' not in st.session_state:
+    st.session_state.processing_audio = False
 
 # --- Background Speech Recognition Callback ---
 def recognition_callback(recognizer, audio):
@@ -500,34 +594,135 @@ with tab3:
             text_output_container.info("Signs and audio will appear here.")
 
 # --- Voice to Sign Tab ---
-with tab4:
-    st.header("Translate Your Voice into Sign Language")
-    # ... (rest of the tab is unchanged) ...
-    st.markdown("Click the button and speak in English to see the sign translation.")
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.subheader("Sign Language Input")
-        if st.button("Start Listening 🎤", key="start_listening"):
-            recognizer = sr.Recognizer()
-            with st.spinner("Listening..."):
-                try:
-                    with sr.Microphone() as source:
-                        recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                        audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
-                    recognized_text = recognizer.recognize_google(audio, language="en-IN").lower()
-                    st.info(f"You said: \"{recognized_text}\"")
-                    st.session_state.voice_to_display = recognized_text
-                except Exception as e:
-                    st.error(f"An error occurred during speech recognition: {e}")
-    with col2:
-        st.subheader("Sign Language Output")
-        voice_output_container = st.container()
-        if 'voice_to_display' in st.session_state and st.session_state.voice_to_display:
-            display_sign_language_and_audio(st.session_state.voice_to_display, voice_output_container)
-            del st.session_state.voice_to_display
-        else:
-            voice_output_container.info("The gestures will appear here after you speak.")
+# =================================================================
+# === NEW: Voice to Sign Tab (using streamlit-webrtc) ===
+# =================================================================
+# =================================================================
+# === NEW: Voice to Sign Tab (Corrected State & Rerun Logic) ===
+# =================================================================
+# =================================================================
+# === NEW: Voice to Sign Tab (FIXED with State Trigger) ===
+# =================================================================
 
+# --- Initialize the new trigger state ---
+if 'new_audio_result' not in st.session_state:
+    st.session_state.new_audio_result = False
+
+# =================================================================
+# === NEW: Voice to Sign Tab (Corrected State Logic) ===
+# =================================S================================
+
+# --- Initialize session state for the queue ---
+if 'audio_result_queue' not in st.session_state:
+    st.session_state.audio_result_queue = queue.Queue()
+audio_result_queue = st.session_state.audio_result_queue
+
+# --- Initialize session state for the display ---
+if 'voice_to_display' not in st.session_state:
+    st.session_state.voice_to_display = "" # Holds the text to be displayed
+if 'last_recognition_result' not in st.session_state:
+    st.session_state.last_recognition_result = "" # Holds the status text
+
+# =================================================================
+# === NEW: Voice to Sign Tab (Thread-Safe) ===
+# =================================================================
+
+# --- Initialize session state for the processor and display text ---
+if 'audio_processor' not in st.session_state:
+    st.session_state.audio_processor = AudioProcessor()
+if 'voice_to_display' not in st.session_state:
+    st.session_state.voice_to_display = ""
+if 'last_recognition_result' not in st.session_state:
+    st.session_state.last_recognition_result = ""
+
+# =================================================================
+# === NEW: Voice to Sign Tab (FIXED with Polling Logic) ===
+# =================================================================
+
+with tab4:
+    st.header("Voice 🎤 ▶️ Sign Language")
+    st.markdown("Click 'Start' below to activate your microphone, speak, and then click 'Stop'.")
+
+    col1, col2 = st.columns([1, 1])
+    processor = st.session_state.audio_processor # Get the persistent processor
+
+    # --- KEY FIX: Polling Logic ---
+    # Are we currently in the "processing" state?
+    if st.session_state.processing_audio:
+        # Show a spinner and check for the result
+        with st.spinner("Processing audio..."):
+            result = None
+            with processor.lock:
+                if processor.result:
+                    result = processor.result
+                    processor.result = None # Clear it after getting
+            
+            if result:
+                # FOUND IT! Stop polling
+                st.session_state.processing_audio = False 
+                st.session_state.last_recognition_result = result
+                if "error" not in result.lower() and "unclear" not in result.lower() and "no audio" not in result.lower():
+                    st.session_state.voice_to_display = result
+                st.rerun() # Rerun one last time to show the result
+            else:
+                # NOT READY YET. Wait and poll again.
+                time.sleep(0.25) # Wait 250ms
+                st.rerun() # Rerun to check again
+
+    # --- Main UI Rendering (if not processing) ---
+    else:
+        with col1:
+            st.subheader("Input (Your Voice)")
+            
+            ctx = webrtc_streamer(
+                key="voice-to-sign-webrtc",
+                mode=WebRtcMode.SENDONLY, 
+                audio_processor_factory=lambda: processor,
+                media_stream_constraints={"video": False, "audio": True},
+                rtc_configuration=RTC_CONFIGURATION,
+                async_processing=True,
+            )
+            
+            # --- Check if the user *just* clicked "Stop" ---
+            # 'webrtc_is_playing' stores the *previous* state
+            if 'webrtc_is_playing' not in st.session_state:
+                st.session_state.webrtc_is_playing = False
+            
+            if not ctx.state.playing and st.session_state.webrtc_is_playing:
+                # If we *were* playing, but now we're not, "Stop" was just clicked.
+                # Start the "processing" state.
+                st.session_state.processing_audio = True
+                st.session_state.webrtc_is_playing = False
+                st.rerun() # Rerun immediately to start the spinner
+
+            # Store the current playing state for comparison next time
+            st.session_state.webrtc_is_playing = ctx.state.playing
+
+            # --- Display Status ---
+            if ctx.state.playing:
+                st.success("✅ Microphone is active. Speak now, then click 'Stop'.")
+            else:
+                st.info("ℹ️ Click 'Start' above to activate your microphone.")
+
+            # Display the last status message (if any)
+            if st.session_state.last_recognition_result:
+                if "error" in st.session_state.last_recognition_result.lower() or "unclear" in st.session_state.last_recognition_result.lower():
+                    st.warning(f"Status: {st.session_state.last_recognition_result}")
+                else:
+                    st.success(f"You said: \"{st.session_state.last_recognition_result}\"")
+                # Clear the status so it's only shown once
+                st.session_state.last_recognition_result = ""
+
+        with col2:
+            st.subheader("Output (Sign Language)")
+            voice_output_container = st.container(height=400, border=False)
+            
+            # This block now runs *after* the polling logic is complete
+            if st.session_state.voice_to_display:
+                display_sign_language_and_audio(st.session_state.voice_to_display, voice_output_container)
+                st.session_state.voice_to_display = "" # Clear it
+            else:
+                voice_output_container.info("Signs and audio will appear here after you speak and click 'Stop'.")
 
 # --- Sign to Text Tab ---
 with tab5:
