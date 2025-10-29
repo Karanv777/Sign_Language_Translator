@@ -11,3 +11,4 @@ torch==2.3.0 --index-url https://download.pytorch.org/whl/cpu
 streamlit-webrtc
 aiortc
 av
+PyAudio
