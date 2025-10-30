@@ -788,7 +788,7 @@ with tab5:
                 collage_image_path = "signs.png"
                 if os.path.exists(collage_image_path):
                     try:
-                        st.image(collage_image_path, caption="Sign Chart", use_column_width=True)
+                        st.image(collage_image_path, caption="Sign Chart", use_container_width=True)
                     except Exception as e:
                         st.error(f"Error loading collage image: {e}")
                 else:
