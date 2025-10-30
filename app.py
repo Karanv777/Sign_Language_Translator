@@ -785,7 +785,7 @@ with tab5:
             # --- NEW: Display the collage image if button clicked ---
             if st.session_state.show_sign_chart:
                 # *** IMPORTANT: Replace 'sign_collage.jpg' with the actual filename of your collage image ***
-                collage_image_path = "sign_collage.jpg"
+                collage_image_path = "signs.png"
                 if os.path.exists(collage_image_path):
                     try:
                         st.image(collage_image_path, caption="Sign Chart", use_column_width=True)
